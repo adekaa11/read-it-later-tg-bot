@@ -1,7 +1,9 @@
-from .common import router as common_router
-from .links import router as links_router
+"""
+handlers/__init__.py — экспорт роутеров для подключения в main.py.
+"""
 
-ALL_ROUTERS = [
-    common_router,
-    links_router,
-]
+from handlers import callbacks, commands, links
+
+# Порядок важен: команды и коллбэки обрабатываются раньше,
+# а роутер links — последним (fallback для сообщений со ссылками).
+ALL_ROUTERS = [commands.router, callbacks.router, links.router]
