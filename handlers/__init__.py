@@ -1,11 +1,3 @@
-from .callbacks import router as callbacks_router
-from .commands import router as commands_router
-from .common import router as common_router
-from .links import router as links_router
+from . import callbacks, commands, common, links
 
-ALL_ROUTERS = [
-    callbacks_router,
-    commands_router,
-    common_router,
-    links_router,
-]
+ALL_ROUTERS = [r.router for r in (callbacks, commands, common, links) if hasattr(r, 'router')]
