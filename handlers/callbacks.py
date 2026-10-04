@@ -15,7 +15,7 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import CallbackQuery
 
 import database
-from handlers.common import strikethrough
+from handlers.common import fit_message, shorten, strikethrough
 
 logger = logging.getLogger(__name__)
 
@@ -46,9 +46,9 @@ async def cb_mark_read(callback: CallbackQuery) -> None:
     await database.mark_as_read(link_id)
 
     # Редактируем сообщение: зачёркиваем заголовок и убираем кнопку
-    new_text = (
+    new_text = fit_message(
         "✅ Прочитано\n"
-        f"{strikethrough(link['title'])}\n"
+        f"{strikethrough(shorten(link['title']))}\n"
         f"{link['url']}"
     )
     try:
