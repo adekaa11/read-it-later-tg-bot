@@ -13,8 +13,13 @@ from dotenv import load_dotenv
 # Загружаем переменные окружения из файла .env (если он существует)
 load_dotenv()
 
-# Токен бота, полученный у @BotFather
-BOT_TOKEN: str | None = os.getenv("BOT_TOKEN")
+# Токен бота, полученный у @BotFather. Лишние пробелы и переводы строк
+# (их легко захватить при копировании в настройки хостинга) отрезаем.
+BOT_TOKEN: str | None = os.getenv("BOT_TOKEN", "").strip() or None
+
+# Строка подключения к PostgreSQL (Supabase → Connect → Session pooler).
+# Если не задана — данные хранятся в SQLite-файле DB_PATH (локальный запуск).
+DATABASE_URL: str | None = os.getenv("DATABASE_URL", "").strip() or None
 
 # Путь к файлу базы данных SQLite (можно переопределить через .env)
 DB_PATH: str = os.getenv("DB_PATH", "read_it_later.db")
@@ -45,3 +50,18 @@ def validate_config() -> None:
             "   2. Получите токен у @BotFather в Telegram\n"
             "   3. Вставьте токен в файл .env и запустите бота снова."
         )
+
+    if DATABASE_URL:
+        # Частая путаница: вставить адрес проекта https://….supabase.co
+        # вместо строки подключения к базе
+        if not DATABASE_URL.startswith(("postgresql://", "postgres://")):
+            sys.exit(
+                "❌ DATABASE_URL должен начинаться с postgresql://.\n"
+                "   Это строка подключения к базе (Supabase → Connect → "
+                "Session pooler), а не адрес проекта https://….supabase.co"
+            )
+        if "[YOUR-PASSWORD]" in DATABASE_URL:
+            sys.exit(
+                "❌ В DATABASE_URL остался шаблон [YOUR-PASSWORD] — "
+                "подставьте пароль от базы Supabase."
+            )

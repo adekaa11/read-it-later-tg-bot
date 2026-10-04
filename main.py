@@ -4,7 +4,7 @@ import os
 from aiohttp import web
 from aiogram import Bot, Dispatcher
 from config import BOT_TOKEN, validate_config
-from database import init_db
+from database import close_db, init_db
 from handlers import ALL_ROUTERS
 
 logging.basicConfig(level=logging.INFO)
@@ -33,7 +33,10 @@ async def main():
         dp.include_router(router)
 
     logger.info("Бот запущен!")
-    await dp.start_polling(bot)
+    try:
+        await dp.start_polling(bot)
+    finally:
+        await close_db()
 
 if __name__ == "__main__":
     asyncio.run(main())
