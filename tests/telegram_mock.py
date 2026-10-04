@@ -13,8 +13,23 @@ from datetime import datetime, timezone
 from aiogram import Bot
 from aiogram.client.session.base import BaseSession
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.methods import EditMessageText, SendMessage, TelegramMethod
-from aiogram.types import CallbackQuery, Chat, Message, Update, User
+from aiogram.methods import (
+    EditMessageText,
+    GetWebhookInfo,
+    SendMessage,
+    TelegramMethod,
+)
+from aiogram.types import (
+    CallbackQuery,
+    Chat,
+    Message,
+    MessageEntity,
+    MessageOriginChannel,
+    PhotoSize,
+    Update,
+    User,
+    WebhookInfo,
+)
 
 USER_ID = 111
 OTHER_USER_ID = 222
@@ -30,6 +45,9 @@ class FakeTelegramSession(BaseSession):
         self.requests: list[TelegramMethod] = []
         # Тип метода → текст ошибки, которой «ответит» Telegram
         self.fail_on: dict[type[TelegramMethod], str] = {}
+        # Адрес webhook, который «знает» Telegram (пусто — webhook нет)
+        self.webhook_url = ""
+        self.closed = False
 
     async def make_request(
         self, bot: Bot, method: TelegramMethod, timeout: int | None = None
@@ -38,6 +56,13 @@ class FakeTelegramSession(BaseSession):
 
         if type(method) in self.fail_on:
             raise TelegramBadRequest(method=method, message=self.fail_on[type(method)])
+
+        if isinstance(method, GetWebhookInfo):
+            return WebhookInfo(
+                url=self.webhook_url,
+                has_custom_certificate=False,
+                pending_update_count=0,
+            )
 
         if isinstance(method, (SendMessage, EditMessageText)):
             return Message(
@@ -53,7 +78,7 @@ class FakeTelegramSession(BaseSession):
         yield b""
 
     async def close(self) -> None:
-        pass
+        self.closed = True
 
     def sent(self, method_type: type[TelegramMethod]) -> list:
         """Все вызовы метода указанного типа, в порядке отправки."""
@@ -68,8 +93,12 @@ def _user(user_id: int) -> User:
     return User(id=user_id, is_bot=False, first_name="Tester")
 
 
-def message_update(text: str, user_id: int = USER_ID) -> Update:
-    """Входящее сообщение от пользователя (как его прислал бы Telegram)."""
+def message_update(text: str | None = None, user_id: int = USER_ID, **fields) -> Update:
+    """Входящее сообщение от пользователя (как его прислал бы Telegram).
+
+    В fields можно передать любые поля Message: entities, caption,
+    caption_entities, photo, forward_origin и т.д.
+    """
     return Update(
         update_id=next(_ids),
         message=Message(
@@ -78,8 +107,33 @@ def message_update(text: str, user_id: int = USER_ID) -> Update:
             chat=Chat(id=user_id, type="private"),
             from_user=_user(user_id),
             text=text,
+            **fields,
         ),
     )
+
+
+def entity(kind: str, text: str, fragment: str, **fields) -> MessageEntity:
+    """Разметка Telegram для куска текста (смещения — в единицах UTF-16)."""
+    start = text.index(fragment)
+    return MessageEntity(
+        type=kind,
+        offset=len(text[:start].encode("utf-16-le")) // 2,
+        length=len(fragment.encode("utf-16-le")) // 2,
+        **fields,
+    )
+
+
+def from_channel() -> MessageOriginChannel:
+    """Отметка «переслано из канала»."""
+    return MessageOriginChannel(
+        type="channel",
+        date=datetime.now(timezone.utc),
+        chat=Chat(id=-1001234567890, type="channel", title="Канал"),
+        message_id=42,
+    )
+
+
+PHOTO = [PhotoSize(file_id="photo", file_unique_id="photo", width=640, height=480)]
 
 
 def callback_update(data: str, user_id: int = USER_ID) -> Update:
