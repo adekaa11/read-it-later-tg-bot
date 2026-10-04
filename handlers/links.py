@@ -38,6 +38,7 @@ from config import (
     MAX_LINKS_PER_MESSAGE,
     MAX_REDIRECTS,
 )
+from handlers.common import shorten
 
 logger = logging.getLogger(__name__)
 
@@ -214,8 +215,9 @@ async def handle_link_message(message: Message) -> None:
     titles = await asyncio.gather(*(fetch_page_title(url) for url in urls))
 
     for url, title in zip(urls, titles):
-        # Если заголовок получить не удалось — используем сам URL
-        title = title or url
+        # Если заголовок получить не удалось — используем сам URL;
+        # слишком длинный заголовок обрезаем
+        title = shorten(title or url)
 
         await database.add_link(
             user_id=message.from_user.id,
