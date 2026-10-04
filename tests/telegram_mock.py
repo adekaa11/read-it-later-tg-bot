@@ -13,7 +13,12 @@ from datetime import datetime, timezone
 from aiogram import Bot
 from aiogram.client.session.base import BaseSession
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.methods import EditMessageText, SendMessage, TelegramMethod
+from aiogram.methods import (
+    EditMessageText,
+    GetWebhookInfo,
+    SendMessage,
+    TelegramMethod,
+)
 from aiogram.types import (
     CallbackQuery,
     Chat,
@@ -23,6 +28,7 @@ from aiogram.types import (
     PhotoSize,
     Update,
     User,
+    WebhookInfo,
 )
 
 USER_ID = 111
@@ -39,6 +45,9 @@ class FakeTelegramSession(BaseSession):
         self.requests: list[TelegramMethod] = []
         # Тип метода → текст ошибки, которой «ответит» Telegram
         self.fail_on: dict[type[TelegramMethod], str] = {}
+        # Адрес webhook, который «знает» Telegram (пусто — webhook нет)
+        self.webhook_url = ""
+        self.closed = False
 
     async def make_request(
         self, bot: Bot, method: TelegramMethod, timeout: int | None = None
@@ -47,6 +56,13 @@ class FakeTelegramSession(BaseSession):
 
         if type(method) in self.fail_on:
             raise TelegramBadRequest(method=method, message=self.fail_on[type(method)])
+
+        if isinstance(method, GetWebhookInfo):
+            return WebhookInfo(
+                url=self.webhook_url,
+                has_custom_certificate=False,
+                pending_update_count=0,
+            )
 
         if isinstance(method, (SendMessage, EditMessageText)):
             return Message(
@@ -62,7 +78,7 @@ class FakeTelegramSession(BaseSession):
         yield b""
 
     async def close(self) -> None:
-        pass
+        self.closed = True
 
     def sent(self, method_type: type[TelegramMethod]) -> list:
         """Все вызовы метода указанного типа, в порядке отправки."""

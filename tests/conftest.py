@@ -15,7 +15,7 @@ import pytest
 from aiogram import Bot, Dispatcher
 
 import database
-from handlers import ALL_ROUTERS
+from main import create_dispatcher
 from tests.telegram_mock import FakeTelegramSession
 
 
@@ -47,15 +47,12 @@ async def db(tmp_path, monkeypatch):
 
 @pytest.fixture(scope="session")
 def dp() -> Dispatcher:
-    """Диспетчер с роутерами бота — тот же порядок, что и в main.py.
+    """Тот же диспетчер, что собирает main.py: роутеры и middleware.
 
     Роутер aiogram можно подключить только к одному диспетчеру,
     поэтому диспетчер общий на все тесты (состояния он не хранит).
     """
-    dispatcher = Dispatcher()
-    for router in ALL_ROUTERS:
-        dispatcher.include_router(router)
-    return dispatcher
+    return create_dispatcher()
 
 
 @pytest.fixture
