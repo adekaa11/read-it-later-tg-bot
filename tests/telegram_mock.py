@@ -14,7 +14,16 @@ from aiogram import Bot
 from aiogram.client.session.base import BaseSession
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.methods import EditMessageText, SendMessage, TelegramMethod
-from aiogram.types import CallbackQuery, Chat, Message, Update, User
+from aiogram.types import (
+    CallbackQuery,
+    Chat,
+    Message,
+    MessageEntity,
+    MessageOriginChannel,
+    PhotoSize,
+    Update,
+    User,
+)
 
 USER_ID = 111
 OTHER_USER_ID = 222
@@ -68,8 +77,12 @@ def _user(user_id: int) -> User:
     return User(id=user_id, is_bot=False, first_name="Tester")
 
 
-def message_update(text: str, user_id: int = USER_ID) -> Update:
-    """Входящее сообщение от пользователя (как его прислал бы Telegram)."""
+def message_update(text: str | None = None, user_id: int = USER_ID, **fields) -> Update:
+    """Входящее сообщение от пользователя (как его прислал бы Telegram).
+
+    В fields можно передать любые поля Message: entities, caption,
+    caption_entities, photo, forward_origin и т.д.
+    """
     return Update(
         update_id=next(_ids),
         message=Message(
@@ -78,8 +91,33 @@ def message_update(text: str, user_id: int = USER_ID) -> Update:
             chat=Chat(id=user_id, type="private"),
             from_user=_user(user_id),
             text=text,
+            **fields,
         ),
     )
+
+
+def entity(kind: str, text: str, fragment: str, **fields) -> MessageEntity:
+    """Разметка Telegram для куска текста (смещения — в единицах UTF-16)."""
+    start = text.index(fragment)
+    return MessageEntity(
+        type=kind,
+        offset=len(text[:start].encode("utf-16-le")) // 2,
+        length=len(fragment.encode("utf-16-le")) // 2,
+        **fields,
+    )
+
+
+def from_channel() -> MessageOriginChannel:
+    """Отметка «переслано из канала»."""
+    return MessageOriginChannel(
+        type="channel",
+        date=datetime.now(timezone.utc),
+        chat=Chat(id=-1001234567890, type="channel", title="Канал"),
+        message_id=42,
+    )
+
+
+PHOTO = [PhotoSize(file_id="photo", file_unique_id="photo", width=640, height=480)]
 
 
 def callback_update(data: str, user_id: int = USER_ID) -> Update:

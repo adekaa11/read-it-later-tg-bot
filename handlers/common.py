@@ -50,10 +50,17 @@ def shorten(text: str, limit: int = MAX_TITLE_LENGTH) -> str:
     return text[: limit - 1].rstrip() + "…"
 
 
+def utf16_len(text: str) -> int:
+    """Длина текста так, как её считает Telegram — в единицах UTF-16.
+
+    Эмодзи и другие символы вне BMP занимают по две единицы.
+    """
+    return len(text.encode("utf-16-le")) // 2
+
+
 def fit_message(text: str) -> str:
     """Обрезает текст сообщения, если он не влезает в лимит Telegram."""
-    # Эмодзи и другие символы вне BMP занимают в UTF-16 две единицы
-    if len(text.encode("utf-16-le")) // 2 <= _TELEGRAM_TEXT_LIMIT:
+    if utf16_len(text) <= _TELEGRAM_TEXT_LIMIT:
         return text
     result, size = [], 1  # 1 — место под «…»
     for ch in text:

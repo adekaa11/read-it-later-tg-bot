@@ -4,7 +4,7 @@ import pytest
 
 import database
 import handlers.links as links
-from tests.telegram_mock import USER_ID, message_update
+from tests.telegram_mock import PHOTO, USER_ID, entity, from_channel, message_update
 
 TITLES = {
     "https://example.com/article": "Пример статьи",
@@ -103,3 +103,123 @@ async def test_text_without_links_is_ignored(feed, session, fetched):
     assert session.requests == []
     assert fetched == []
     assert await saved_links() == []
+
+
+# --- пересланные посты, скрытые ссылки, подписи к фото ---
+
+
+async def test_hidden_link_in_forwarded_post(feed, session, fetched):
+    text = "Новая статья в блоге. Читать далее"
+    await feed(
+        message_update(
+            text,
+            entities=[
+                entity(
+                    "text_link", text, "Читать далее", url="https://example.com/article"
+                )
+            ],
+            forward_origin=from_channel(),
+        )
+    )
+
+    assert session.texts() == ["✅ Сохранено: Пример статьи"]
+    assert await saved_links() == [("https://example.com/article", "Пример статьи")]
+
+
+async def test_link_in_photo_caption(feed, session, fetched):
+    caption = "Фото дня, подробнее: https://example.org/"
+    await feed(
+        message_update(
+            photo=PHOTO,
+            caption=caption,
+            caption_entities=[entity("url", caption, "https://example.org/")],
+        )
+    )
+
+    assert session.texts() == ["✅ Сохранено: Example Domain"]
+    assert await saved_links() == [("https://example.org/", "Example Domain")]
+
+
+async def test_hidden_link_in_forwarded_photo_caption(feed, session, fetched):
+    caption = "Разбор новой версии → по ссылке"
+    await feed(
+        message_update(
+            photo=PHOTO,
+            caption=caption,
+            caption_entities=[
+                entity("text_link", caption, "по ссылке", url="https://example.org/")
+            ],
+            forward_origin=from_channel(),
+        )
+    )
+
+    assert session.texts() == ["✅ Сохранено: Example Domain"]
+
+
+async def test_caption_without_markup_is_parsed_too(feed, session, fetched):
+    # Разметки нет — ссылку находит регулярное выражение
+    await feed(message_update(photo=PHOTO, caption="Тут: https://example.org/."))
+
+    assert fetched == ["https://example.org/"]
+
+
+async def test_url_entity_keeps_parentheses(feed, fetched):
+    # Регулярное выражение обрезало бы ссылку на «(»; разметка Telegram — нет
+    url = "https://en.wikipedia.org/wiki/Python_(programming_language)"
+    text = f"Про язык: {url}"
+
+    await feed(message_update(text, entities=[entity("url", text, url)]))
+
+    assert fetched == [url]
+
+
+async def test_offsets_after_emoji(feed, fetched):
+    # Эмодзи занимает в UTF-16 две единицы — смещения Telegram это учитывают
+    text = "🔥🔥 Смотри тут и вот https://example.org/"
+    await feed(
+        message_update(
+            text,
+            entities=[
+                entity("text_link", text, "тут", url="https://example.com/article"),
+                entity("url", text, "https://example.org/"),
+            ],
+        )
+    )
+
+    assert fetched == ["https://example.com/article", "https://example.org/"]
+
+
+async def test_same_link_visible_and_hidden_is_saved_once(feed, session, fetched):
+    text = "https://example.org/ — и ещё раз здесь"
+    await feed(
+        message_update(
+            text,
+            entities=[
+                entity("url", text, "https://example.org/"),
+                entity("text_link", text, "здесь", url="https://example.org/"),
+            ],
+        )
+    )
+
+    assert session.texts() == ["✅ Сохранено: Example Domain"]
+
+
+async def test_non_http_hidden_link_is_ignored(feed, session, fetched):
+    text = "Подписывайтесь на канал"
+    await feed(
+        message_update(
+            text,
+            entities=[
+                entity("text_link", text, "канал", url="tg://resolve?domain=example")
+            ],
+        )
+    )
+
+    assert session.requests == []
+    assert fetched == []
+
+
+async def test_photo_without_caption_is_ignored(feed, session, fetched):
+    await feed(message_update(photo=PHOTO))
+
+    assert session.requests == []
