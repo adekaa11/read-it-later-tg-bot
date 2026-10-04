@@ -1,5 +1,6 @@
 """Inline-кнопка «✅ Отметить прочитанным»."""
 
+import pytest
 from aiogram.methods import AnswerCallbackQuery, EditMessageText
 
 import database
@@ -53,8 +54,12 @@ async def test_already_read_link(feed, session):
     assert session.sent(EditMessageText) == []
 
 
-async def test_invalid_callback_data(feed, session):
-    await feed(callback_update("mark_read:abc"))
+@pytest.mark.parametrize(
+    "data",
+    ["mark_read:abc", "mark_read:-5", "mark_read:0", f"mark_read:{2**63}"],
+)
+async def test_invalid_callback_data(feed, session, data):
+    await feed(callback_update(data))
 
     [answer] = session.sent(AnswerCallbackQuery)
     assert answer.text == "Некорректные данные."

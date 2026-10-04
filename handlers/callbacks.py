@@ -27,6 +27,9 @@ async def cb_mark_read(callback: CallbackQuery) -> None:
     """Отмечает ссылку прочитанной и редактирует сообщение."""
     try:
         link_id = int(callback.data.split(":", 1)[1])
+        # id в базе — положительное 64-битное число; остальное — подделка
+        if not 0 < link_id < 2**63:
+            raise ValueError
     except ValueError:
         await callback.answer("Некорректные данные.", show_alert=True)
         return
