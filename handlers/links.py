@@ -1,7 +1,11 @@
 """
 handlers/links.py — обработка входящих сообщений со ссылками.
 
-Если пользователь присылает текст, содержащий http/https ссылку:
+Ссылки ищутся в тексте сообщения или в подписи к фото/видео/файлу,
+в том числе в пересланных постах. Учитываются и «скрытые» ссылки под
+словами («Читать далее»), которых не видно в самом тексте.
+
+Для каждой найденной http/https ссылки:
 1. Бот асинхронно скачивает начало HTML страницы через aiohttp.
 2. Парсит тег <title> через BeautifulSoup.
 3. Сохраняет ссылку и заголовок в БД (is_read=False).
@@ -38,7 +42,7 @@ from config import (
     MAX_LINKS_PER_MESSAGE,
     MAX_REDIRECTS,
 )
-from handlers.common import shorten
+from handlers.common import shorten, utf16_len
 
 logger = logging.getLogger(__name__)
 
@@ -192,22 +196,60 @@ async def cmd_start(message: Message) -> None:
     """Приветственное сообщение по команде /start."""
     await message.answer(
         "👋 Привет! Я бот «Read It Later».\n\n"
-        "Просто пришли мне ссылку (http/https) — я сохраню её, "
-        "чтобы ты мог прочитать позже.\n\n"
+        "Просто пришли мне ссылку (http/https) или перешли пост со ссылкой — "
+        "я сохраню её, чтобы ты мог прочитать позже.\n\n"
         "Команды:\n"
         "/list — 5 последних непрочитанных ссылок\n"
         "/random — случайная непрочитанная ссылка"
     )
 
 
-@router.message(lambda message: message.text and URL_REGEX.search(message.text))
-async def handle_link_message(message: Message) -> None:
-    """Сохраняет все ссылки, найденные в текстовом сообщении пользователя."""
-    # Убираем «прилипшую» пунктуацию в конце ссылки (точки, запятые и т.п.)
-    # и повторы, сохраняя порядок ссылок в сообщении
-    urls = list(
-        dict.fromkeys(url.rstrip(".,;:!?") for url in URL_REGEX.findall(message.text))
+def extract_urls(message: Message) -> list[str]:
+    """Все http/https ссылки из текста или подписи — по порядку, без повторов."""
+    if message.text is not None:
+        text, entities = message.text, message.entities or []
+    else:
+        text, entities = message.caption or "", message.caption_entities or []
+
+    found: list[tuple[int, str]] = []  # (позиция в тексте, ссылка)
+    marked: list[tuple[int, int]] = []  # где Telegram уже разметил ссылку
+
+    # Разметка Telegram: url — ссылка видна в тексте,
+    # text_link — ссылка «спрятана» под словами
+    for entity in entities:
+        if entity.type == "url":
+            found.append((entity.offset, entity.extract_from(text)))
+        elif entity.type == "text_link" and entity.url:
+            found.append((entity.offset, entity.url))
+        else:
+            continue
+        marked.append((entity.offset, entity.offset + entity.length))
+
+    # Запасной вариант — регулярное выражение, если разметки нет
+    for match in URL_REGEX.finditer(text):
+        # Telegram считает позиции в UTF-16 — переводим в те же единицы
+        offset = utf16_len(text[: match.start()])
+        if not any(start <= offset < end for start, end in marked):
+            # Убираем «прилипшую» пунктуацию в конце ссылки (точки, запятые и т.п.)
+            found.append((offset, match.group().rstrip(".,;:!?")))
+
+    urls = (url for _, url in sorted(found, key=lambda item: item[0]))
+    return list(
+        dict.fromkeys(
+            url for url in urls if url.lower().startswith(("http://", "https://"))
+        )
     )
+
+
+def has_links(message: Message) -> dict | bool:
+    """Фильтр: пропускает сообщения со ссылками и передаёт их в обработчик."""
+    urls = extract_urls(message)
+    return {"urls": urls} if urls else False
+
+
+@router.message(has_links)
+async def handle_link_message(message: Message, urls: list[str]) -> None:
+    """Сохраняет все ссылки из сообщения пользователя (не больше лимита)."""
     skipped = len(urls) - MAX_LINKS_PER_MESSAGE
     urls = urls[:MAX_LINKS_PER_MESSAGE]
 
